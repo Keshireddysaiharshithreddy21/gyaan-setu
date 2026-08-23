@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>Gyaan Setu</title>
+
+    <link rel="stylesheet" href="./style.css">
+
+    <link rel="manifest" href="./manifest.json">
+
+    <meta name="theme-color" content="#ffffff">
+
+    <link rel="apple-touch-icon"
+          href="./images/icon-192.png">
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <img src="images/logo.png"
+         class="logo"
+         alt="Gyaan Setu Logo">
+
+    <h1>Gyaan Setu</h1>
+
+
+    <!-- LANGUAGE SCREEN -->
+
+    <div id="languageScreen">
+
+        <h2>Select Your Language</h2>
+
+        <button onclick="selectLanguage('English')">
+            English
+        </button>
+
+        <button onclick="selectLanguage('Telugu')">
+            తెలుగు
+        </button>
+
+        <button onclick="selectLanguage('Hindi')">
+            हिंदी
+        </button>
+
+    </div>
+
+
+    <!-- CLASS SCREEN -->
+
+    <div id="classScreen" class="hidden">
+
+        <h2 id="classTitle">
+            Select Your Class
+        </h2>
+
+        <button onclick="selectClass(1)">
+            <span id="class1Text">Class 1</span>
+        </button>
+
+        <button onclick="selectClass(2)">
+            <span id="class2Text">Class 2</span>
+        </button>
+
+        <button onclick="selectClass(3)">
+            <span id="class3Text">Class 3</span>
+        </button>
+
+    </div>
+
+
+    <!-- SUBJECT SCREEN -->
+
+    <div id="subjectScreen" class="hidden">
+
+        <h2 id="subjectTitle">
+            Select Your Subject
+        </h2>
+
+        <button onclick="selectSubject('Maths')">
+            <span id="mathsText">
+                Mathematics
+            </span>
+        </button>
+
+    </div>
+
+
+    <!-- TOPIC SCREEN -->
+
+    <div id="topicScreen" class="hidden">
+
+        <h2 id="topicTitle">
+            Select Topic
+        </h2>
+
+        <button onclick="openLesson()">
+            <span id="additionText">
+                Addition
+            </span>
+        </button>
+
+    </div>
+
+
+    <!-- LESSON SCREEN -->
+
+    <div id="lessonScreen" class="hidden">
+
+        <h2 id="lessonTitle">
+            Addition
+        </h2>
+
+        <p id="lessonContent"></p>
+
+        <button id="activityButton"
+                onclick="openActivity()">
+            Start Activity
+        </button>
+
+        <button id="quizButton"
+                onclick="openQuiz()">
+            Take Quiz
+        </button>
+
+        <button id="questionButton"
+                onclick="openQuestionScreen()">
+            Ask a Question
+        </button>
+
+    </div>
+
+
+    <!-- ACTIVITY SCREEN -->
+
+    <div id="activityScreen" class="hidden">
+
+        <h2 id="activityTitle">
+            Addition Activity
+        </h2>
+
+        <h3 id="activityQuestion">
+            2 + 3 = ?
+        </h3>
+
+        <button onclick="checkActivity(4)">
+            4
+        </button>
+
+        <button onclick="checkActivity(5)">
+            5
+        </button>
+
+        <button onclick="checkActivity(6)">
+            6
+        </button>
+
+        <p id="activityResult"></p>
+
+        <button onclick="openLesson()">
+            Back to Lesson
+        </button>
+
+    </div>
+    <!-- QUIZ SCREEN -->
+
+<div id="quizScreen" class="hidden">
+
+    <h2 id="quizTitle">Addition Quiz</h2>
+
+    <h3 id="quizQuestion">Question</h3>
+
+    <button id="quizOption1" onclick="checkQuizAnswer(0)">
+        Option 1
+    </button>
+
+    <button id="quizOption2" onclick="checkQuizAnswer(1)">
+        Option 2
+    </button>
+
+    <button id="quizOption3" onclick="checkQuizAnswer(2)">
+        Option 3
+    </button>
+
+    <p id="quizResult"></p>
+
+    <button id="quizBackButton"
+            class="hidden"
+            onclick="openLesson()">
+        Back to Lesson
+    </button>
+
+</div>
+<!-- QUESTION & ANSWER SCREEN -->
+
+<div id="questionScreen" class="hidden">
+
+    <h2 id="questionTitle">
+        Ask a Question
+    </h2>
+
+    <input
+        type="text"
+        id="questionInput"
+        placeholder="Type your question here">
+
+    <button id="askButton" onclick="findAnswer()">
+        Find Answer
+    </button>
+
+    <div id="answerBox">
+
+        <h3 id="answerHeading"></h3>
+
+        <p id="answerText"></p>
+
+    </div>
+
+    <button id="questionBackButton" onclick="openLesson()">
+        Back to Lesson
+    </button>
+
+</div>
+
+
+</div>
+
+
+<script src="script.js"></script>
+
+</body>
+
+</html>
