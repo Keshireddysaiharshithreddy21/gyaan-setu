@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <meta name="theme-color" content="#176BFF">
+
+  <title>Gyaan Setu</title>
+
+  <link
+    rel="manifest"
+    href="./manifest.json"
+  >
+
+  <link
+    rel="icon"
+    href="./images/icon-192.png"
+  >
+
+  <link
+    rel="stylesheet"
+    href="./style.css"
+  >
+</head>
+
+
+<body>
+
+  <!-- =========================
+       HEADER
+  ========================== -->
+
+  <header class="topbar">
+
+    <div class="brand">
+
+      <img
+        src="./images/logo.png"
+        alt="Gyaan Setu"
+        class="brand-logo"
+      >
+
+      <div>
+        <h1>Gyaan Setu</h1>
+        <p>Learning Beyond Internet Barriers</p>
+      </div>
+
+    </div>
+
+    <div class="offline-pill">
+      <span id="networkDot"></span>
+      <span id="networkText">Checking...</span>
+    </div>
+
+  </header>
+
+
+  <!-- =========================
+       MAIN APP
+  ========================== -->
+
+  <main id="app"></main>
+
+
+  <!-- =========================
+       FLOATING CHAT BUTTON
+  ========================== -->
+
+  <button
+    id="chatFab"
+    class="chat-fab"
+    aria-label="Open Gyaan Assistant"
+  >
+    💬
+  </button>
+
+
+  <!-- =========================
+       CHAT WINDOW
+  ========================== -->
+
+  <div
+    id="chatOverlay"
+    class="chat-overlay hidden"
+  >
+
+    <div class="chat-box">
+
+      <div class="chat-header">
+
+        <div class="assistant-title">
+
+          <div class="assistant-avatar">
+            🤖
+          </div>
+
+          <div>
+            <h3>Gyaan Assistant</h3>
+            <p>Offline Learning Assistant</p>
+          </div>
+
+        </div>
+
+
+        <button
+          id="closeChat"
+          class="close-chat"
+          aria-label="Close chat"
+        >
+          ✕
+        </button>
+
+      </div>
+
+
+      <div
+        id="chatMessages"
+        class="chat-messages"
+      ></div>
+
+
+      <div class="suggestions">
+
+        <button onclick="askSuggestion('What do plants need?')">
+          🌱 Plants
+        </button>
+
+        <button onclick="askSuggestion('Why is water important?')">
+          💧 Water
+        </button>
+
+        <button onclick="askSuggestion('What are animals?')">
+          🐘 Animals
+        </button>
+
+      </div>
+
+
+      <div class="chat-input-area">
+
+        <input
+          id="chatInput"
+          type="text"
+          placeholder="Ask your question..."
+          autocomplete="off"
+        >
+
+        <button
+          id="sendChat"
+          aria-label="Send message"
+        >
+          ➤
+        </button>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <!-- =========================
+       BOTTOM NAVIGATION
+  ========================== -->
+
+  <nav class="bottom-nav">
+
+    <button
+      class="nav-item active"
+      onclick="showHome()"
+    >
+      <span>🏠</span>
+      <small>Home</small>
+    </button>
+
+
+    <button
+      class="nav-item"
+      onclick="showLearn()"
+    >
+      <span>📚</span>
+      <small>Learn</small>
+    </button>
+
+
+    <button
+      class="nav-item"
+      onclick="openChat()"
+    >
+      <span>💬</span>
+      <small>Ask</small>
+    </button>
+
+  </nav>
+
+
+  <script src="./data.js"></script>
+  <script src="./app.js"></script>
+
+</body>
+
+</html>
