@@ -4,7 +4,7 @@
 // ======================================================
 
 const CACHE_NAME =
-  "gyaan-setu-v16";
+  "gyaan-setu-v19";
 
 
 const APP_FILES = [

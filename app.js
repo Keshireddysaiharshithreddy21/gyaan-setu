@@ -10,21 +10,594 @@
 
 const app = document.getElementById("app");
 
-let selectedLanguage =
-  localStorage.getItem("gyaanLanguage") || "English";
+const ACCOUNTS_KEY = "gyaanAccounts";
+const CURRENT_ACCOUNT_KEY = "gyaanCurrentAccount";
 
-let selectedClass =
-  Number(localStorage.getItem("gyaanClass")) || null;
+let accounts = readAccounts();
+let currentAccountId =
+  localStorage.getItem(CURRENT_ACCOUNT_KEY) || null;
 
-let completedLessons =
-  JSON.parse(
-    localStorage.getItem("gyaanProgress") || "{}"
+let selectedLanguage = "English";
+let selectedClass = null;
+let completedLessons = {};
+let lastLesson = null;
+let wrongAnswers = [];
+let experiencePoints = 0;
+let languageChosenBeforeAuth = false;
+
+loadCurrentAccount();
+
+
+function readAccounts() {
+
+  try {
+
+    return JSON.parse(
+      localStorage.getItem(ACCOUNTS_KEY) || "{}"
+    );
+
+  }
+
+  catch (error) {
+
+    return {};
+
+  }
+}
+
+
+function loadCurrentAccount() {
+
+  const account =
+    currentAccountId
+      ? accounts[currentAccountId]
+      : null;
+
+
+  if (!account) {
+    currentAccountId = null;
+    return;
+  }
+
+
+  selectedLanguage = account.language || "English";
+  selectedClass = Number(account.classNumber) || null;
+  completedLessons = account.progress || {};
+  lastLesson = account.lastLesson || null;
+  wrongAnswers = account.wrongAnswers || [];
+  experiencePoints = Number(account.experiencePoints) || 0;
+}
+
+
+function saveAccounts() {
+
+  localStorage.setItem(
+    ACCOUNTS_KEY,
+    JSON.stringify(accounts)
   );
+}
 
-let lastLesson =
-  JSON.parse(
-    localStorage.getItem("gyaanLastLesson") || "null"
+
+function saveAccountState() {
+
+  if (!currentAccountId || !accounts[currentAccountId]) {
+    return;
+  }
+
+
+  accounts[currentAccountId].language = selectedLanguage;
+  accounts[currentAccountId].classNumber = selectedClass;
+  accounts[currentAccountId].progress = completedLessons;
+  accounts[currentAccountId].lastLesson = lastLesson;
+  accounts[currentAccountId].wrongAnswers = wrongAnswers;
+  accounts[currentAccountId].experiencePoints = experiencePoints;
+
+  saveAccounts();
+}
+
+
+function accountName() {
+
+  return currentAccountId && accounts[currentAccountId]
+    ? accounts[currentAccountId].name
+    : "";
+}
+
+
+function escapeHtml(value) {
+
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+
+async function hashPin(pin) {
+
+  const data = new TextEncoder().encode(pin);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+
+  return Array.from(
+    new Uint8Array(hash)
+  )
+    .map(byte => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+
+function renderAccountArea() {
+
+  const container =
+    document.getElementById("accountArea");
+
+
+  if (!container) {
+    return;
+  }
+
+
+  if (!currentAccountId) {
+
+    container.innerHTML = `
+      <button class="account-button" onclick="showAuthScreen()">
+        ${uiText("login")}
+      </button>
+    `;
+
+    return;
+  }
+
+
+  container.innerHTML = `
+    <span class="account-name">${escapeHtml(
+      textByLanguage(
+        `Hi, ${accountName()}`,
+        `హాయ్, ${accountName()}`,
+        `नमस्ते, ${accountName()}`
+      )
+    )}</span>
+    <button class="account-button" onclick="showProfileScreen()">
+      ${textByLanguage("Profile", "ప్రొఫైల్", "प्रोफ़ाइल")}
+    </button>
+    <button class="account-button" onclick="logout()">
+      ${textByLanguage("Log out", "లాగ్ అవుట్", "लॉग आउट")}
+    </button>
+  `;
+}
+
+
+function migrateAnonymousProgress() {
+
+  const oldProgress =
+    localStorage.getItem("gyaanProgress");
+
+  if (!oldProgress) {
+    return;
+  }
+
+
+  completedLessons =
+    JSON.parse(oldProgress || "{}");
+
+  selectedLanguage =
+    localStorage.getItem("gyaanLanguage") || "English";
+
+  selectedClass =
+    Number(localStorage.getItem("gyaanClass")) || null;
+
+  lastLesson =
+    JSON.parse(
+      localStorage.getItem("gyaanLastLesson") || "null"
+    );
+}
+
+
+function showAuthScreen(
+  mode = "login",
+  message = ""
+) {
+
+  const isLogin =
+    mode === "login";
+
+  const authText = {
+    badge: textByLanguage(
+      "Offline student account",
+      "ఆఫ్‌లైన్ విద్యార్థి ఖాతా",
+      "ऑफलाइन विद्यार्थी खाता"
+    ),
+    loginTitle: textByLanguage(
+      "Welcome back",
+      "స్వాగతం",
+      "वापसी पर स्वागत है"
+    ),
+    registerTitle: textByLanguage(
+      "Create your student account",
+      "మీ విద్యార్థి ఖాతాను సృష్టించండి",
+      "अपना विद्यार्थी खाता बनाएँ"
+    ),
+    loginIntro: textByLanguage(
+      "Log in to continue from where you stopped.",
+      "మీరు ఆపిన చోటు నుండి కొనసాగించడానికి లాగిన్ అవ్వండి.",
+      "जहाँ आपने छोड़ा था वहाँ से जारी रखने के लिए लॉगिन करें।"
+    ),
+    registerIntro: textByLanguage(
+      "Your learning progress will be saved on this device.",
+      "మీ అభ్యాస పురోగతి ఈ పరికరంలో సేవ్ చేయబడుతుంది.",
+      "आपकी सीखने की प्रगति इस डिवाइस पर सेव होगी।"
+    ),
+    name: textByLanguage("Student name", "విద్యార్థి పేరు", "विद्यार्थी का नाम"),
+    namePlaceholder: textByLanguage("Enter your name", "మీ పేరు నమోదు చేయండి", "अपना नाम दर्ज करें"),
+    pin: textByLanguage("4-digit PIN", "4 అంకెల పిన్", "4 अंकों का पिन"),
+    pinPlaceholder: textByLanguage("Enter 4 digits", "4 అంకెలను నమోదు చేయండి", "4 अंक दर्ज करें"),
+    login: textByLanguage("Log in", "లాగిన్", "लॉगिन"),
+    register: textByLanguage("Create account", "ఖాతాను సృష్టించండి", "खाता बनाएँ"),
+    newStudent: textByLanguage("New student? Create an account", "కొత్త విద్యార్థి? ఖాతాను సృష్టించండి", "नए विद्यार्थी हैं? खाता बनाएँ"),
+    existingStudent: textByLanguage("Already have an account? Log in", "ఇప్పటికే ఖాతా ఉందా? లాగిన్ అవ్వండి", "पहले से खाता है? लॉगिन करें"),
+    note: textByLanguage(
+      "This offline account is stored only in this browser on this device.",
+      "ఈ ఆఫ్‌లైన్ ఖాతా ఈ పరికరంలోని ఈ బ్రౌజర్‌లో మాత్రమే నిల్వ చేయబడుతుంది.",
+      "यह ऑफलाइन खाता इस डिवाइस के इसी ब्राउज़र में ही सेव होता है।"
+    )
+  };
+
+
+  app.innerHTML = `
+    <section class="auth-section">
+      <div class="auth-card">
+        <div class="auth-icon">🎓</div>
+        <span class="hero-badge auth-badge">${authText.badge}</span>
+        <h2>${isLogin ? authText.loginTitle : authText.registerTitle}</h2>
+        <p class="auth-intro">
+          ${isLogin ? authText.loginIntro : authText.registerIntro}
+        </p>
+
+        ${message ? `<p class="auth-message">${escapeHtml(message)}</p>` : ""}
+
+        <form onsubmit="${isLogin ? "handleLogin" : "handleRegister"}(event)">
+          <label for="accountNameInput">${authText.name}</label>
+          <input
+            id="accountNameInput"
+            name="studentName"
+            type="text"
+            minlength="2"
+            maxlength="30"
+            autocomplete="username"
+            placeholder="${authText.namePlaceholder}"
+            required
+          >
+
+          <label for="accountPinInput">${authText.pin}</label>
+          <input
+            id="accountPinInput"
+            name="pin"
+            type="password"
+            inputmode="numeric"
+            pattern="[0-9]{4}"
+            minlength="4"
+            maxlength="4"
+            autocomplete="${isLogin ? "current-password" : "new-password"}"
+            placeholder="${authText.pinPlaceholder}"
+            required
+          >
+
+          <button class="action-btn auth-submit" type="submit">
+            ${isLogin ? authText.login : authText.register}
+          </button>
+        </form>
+
+        <button
+          class="auth-switch"
+          onclick="showAuthScreen('${isLogin ? "register" : "login"}')"
+        >
+          ${isLogin ? authText.newStudent : authText.existingStudent}
+        </button>
+
+        <p class="auth-note">
+          ${authText.note}
+        </p>
+      </div>
+    </section>
+  `;
+
+
+  setTimeout(
+    () => document.getElementById("accountNameInput")?.focus(),
+    0
   );
+}
+
+
+function accountIdFromName(name) {
+
+  return name.trim().toLowerCase();
+}
+
+
+async function handleRegister(event) {
+
+  event.preventDefault();
+
+  const form = event.target;
+  const name = form.studentName.value.trim();
+  const pin = form.pin.value.trim();
+  const id = accountIdFromName(name);
+
+
+  if (name.length < 2 || !/^\d{4}$/.test(pin)) {
+    showAuthScreen(
+      "register",
+      textByLanguage(
+        "Enter a name and a 4-digit PIN.",
+        "పేరు మరియు 4 అంకెల పిన్ నమోదు చేయండి.",
+        "नाम और 4 अंकों का पिन दर्ज करें।"
+      )
+    );
+    return;
+  }
+
+
+  if (accounts[id]) {
+    showAuthScreen(
+      "register",
+      textByLanguage(
+        "That student account already exists.",
+        "ఆ విద్యార్థి ఖాతా ఇప్పటికే ఉంది.",
+        "यह विद्यार्थी खाता पहले से मौजूद है।"
+      )
+    );
+    return;
+  }
+
+
+  if (Object.keys(accounts).length === 0) {
+    migrateAnonymousProgress();
+  }
+
+
+  accounts[id] = {
+    name,
+    pinHash: await hashPin(pin),
+    language: selectedLanguage,
+    classNumber: selectedClass,
+    progress: completedLessons,
+    lastLesson,
+    wrongAnswers,
+    experiencePoints
+  };
+
+  currentAccountId = id;
+  localStorage.setItem(CURRENT_ACCOUNT_KEY, currentAccountId);
+  saveAccounts();
+  renderAccountArea();
+  showHome();
+}
+
+
+async function handleLogin(event) {
+
+  event.preventDefault();
+
+  const form = event.target;
+  const id = accountIdFromName(form.studentName.value);
+  const account = accounts[id];
+  const chosenLanguage = selectedLanguage;
+
+
+  if (!account || account.pinHash !== await hashPin(form.pin.value.trim())) {
+    showAuthScreen(
+      "login",
+      textByLanguage(
+        "The student name or PIN is incorrect.",
+        "విద్యార్థి పేరు లేదా పిన్ తప్పుగా ఉంది.",
+        "विद्यार्थी का नाम या पिन गलत है।"
+      )
+    );
+    return;
+  }
+
+
+  currentAccountId = id;
+  localStorage.setItem(CURRENT_ACCOUNT_KEY, currentAccountId);
+  loadCurrentAccount();
+
+  if (languageChosenBeforeAuth) {
+    selectedLanguage = chosenLanguage;
+    saveAccountState();
+  }
+
+  languageChosenBeforeAuth = false;
+  renderAccountArea();
+  showHome();
+}
+
+
+function logout() {
+
+  saveAccountState();
+  currentAccountId = null;
+  localStorage.removeItem(CURRENT_ACCOUNT_KEY);
+  selectedLanguage = "English";
+  selectedClass = null;
+  completedLessons = {};
+  lastLesson = null;
+  wrongAnswers = [];
+  experiencePoints = 0;
+  languageChosenBeforeAuth = false;
+  renderAccountArea();
+  showLanguageScreen();
+}
+
+
+function showProfileScreen() {
+
+  if (!currentAccountId) {
+    showLanguageScreen();
+    return;
+  }
+
+
+  const overall =
+    getOverallProgress();
+
+  const badges =
+    getBadgeList(overall.completed);
+
+
+  app.innerHTML = `
+    <button class="back-btn" onclick="showHome()">
+      ← ${uiText("back")}
+    </button>
+
+    <section class="section-heading">
+      <h2>👤 ${textByLanguage("Student Profile", "విద్యార్థి ప్రొఫైల్", "विद्यार्थी प्रोफ़ाइल")}</h2>
+      <p>${textByLanguage("Your offline learning record", "మీ ఆఫ్‌లైన్ అభ్యాస రికార్డు", "आपका ऑफलाइन सीखने का रिकॉर्ड")}</p>
+    </section>
+
+    <section class="profile-panel">
+      <div class="profile-identity">
+        <div class="profile-avatar">${escapeHtml(accountName().slice(0, 1).toUpperCase())}</div>
+        <div>
+          <h2>${escapeHtml(accountName())}</h2>
+          <p>${getLanguageDisplayName()} · ${selectedClass ? getClassName(selectedClass) : textByLanguage("No class selected", "తరగతి ఎంచుకోలేదు", "कक्षा नहीं चुनी गई")}</p>
+        </div>
+      </div>
+
+      <div class="profile-stats">
+        <div><strong>${experiencePoints}</strong><span>XP</span></div>
+        <div><strong>${overall.completed}</strong><span>${textByLanguage("Lessons", "పాఠాలు", "पाठ")}</span></div>
+        <div><strong>${wrongAnswers.length}</strong><span>${textByLanguage("To practise", "అభ్యాసం చేయాలి", "अभ्यास बाकी")}</span></div>
+      </div>
+    </section>
+
+    <section class="profile-section">
+      <div class="section-heading">
+        <h2>🏅 ${textByLanguage("Badges", "బ్యాడ్జ్‌లు", "बैज")}</h2>
+      </div>
+      <div class="badge-grid">
+        ${badges}
+      </div>
+    </section>
+
+    <section class="profile-section">
+      <div class="section-heading">
+        <h2>🧠 ${textByLanguage("Practice Mistakes", "తప్పులను అభ్యాసం చేయండి", "गलत उत्तरों का अभ्यास करें")}</h2>
+        <p>${textByLanguage("Review questions you missed in quizzes.", "క్విజ్‌లలో మీరు తప్పిన ప్రశ్నలను సమీక్షించండి.", "क्विज़ में छूटे प्रश्नों को दोहराएँ।")}</p>
+      </div>
+      <button class="action-btn practice-button" onclick="showWrongAnswerPractice()" ${wrongAnswers.length ? "" : "disabled"}>
+        ${wrongAnswers.length ? textByLanguage("Practice Now", "ఇప్పుడే అభ్యాసం చేయండి", "अभी अभ्यास करें") : textByLanguage("All caught up", "అన్నీ పూర్తయ్యాయి", "सब पूरा है")}
+      </button>
+    </section>
+  `;
+
+  window.scrollTo(0, 0);
+}
+
+
+function getBadgeList(completed) {
+
+  const badgeDefinitions = [
+    ["🌱", "First Step", "మొదటి అడుగు", "पहला कदम", 1],
+    ["⭐", "Quiz Starter", "క్విజ్ స్టార్టర్", "क्विज़ स्टार्टर", 10],
+    ["🔥", "Learning Streak", "అభ్యాస పరంపర", "सीखने की निरंतरता", 25],
+    ["🏆", "Gyaan Champion", "జ్ఞాన్ ఛాంపియన్", "ज्ञान चैंपियन", 50]
+  ];
+
+
+  return badgeDefinitions
+    .map(
+      badge => {
+        const unlocked = experiencePoints >= badge[4] || completed >= badge[4] / 10;
+
+        return `
+          <div class="badge-item ${unlocked ? "unlocked" : "locked"}">
+            <span>${badge[0]}</span>
+            <strong>${textByLanguage(badge[1], badge[2], badge[3])}</strong>
+            <small>${unlocked ? textByLanguage("Unlocked", "అన్‌లాక్ అయింది", "अनलॉक है") : `${badge[4]} XP`}</small>
+          </div>
+        `;
+      }
+    )
+    .join("");
+}
+
+
+function showWrongAnswerPractice() {
+
+  if (!wrongAnswers.length) {
+    showProfileScreen();
+    return;
+  }
+
+
+  const cards = wrongAnswers
+    .map(
+      (item, index) => {
+        const lesson = learningData[`class${item.classNumber}`]
+          ?.chapters[item.chapterIndex]
+          ?.lessons[item.lessonIndex];
+        const question = lesson?.quiz[item.questionIndex];
+
+        if (!lesson || !question) {
+          return "";
+        }
+
+        return `
+          <div class="practice-card" data-practice-index="${index}">
+            <span class="practice-topic">${lesson.title[selectedLanguage]}</span>
+            <h3>${question.question[selectedLanguage]}</h3>
+            <div class="practice-options">
+              ${question.options[selectedLanguage].map(
+                (option, optionIndex) => `
+                  <button class="quiz-option" onclick="answerPractice(this, ${item.classNumber}, ${item.chapterIndex}, ${item.lessonIndex}, ${item.questionIndex}, ${optionIndex}, ${question.answer})">
+                    ${option}
+                  </button>
+                `
+              ).join("")}
+            </div>
+          </div>
+        `;
+      }
+    )
+    .join("");
+
+
+  app.innerHTML = `
+    <button class="back-btn" onclick="showProfileScreen()">
+      ← ${uiText("back")}
+    </button>
+    <section class="section-heading">
+      <h2>🧠 ${textByLanguage("Practice Mistakes", "తప్పులను అభ్యాసం చేయండి", "गलत उत्तरों का अभ्यास करें")}</h2>
+      <p>${textByLanguage("Try each question again and strengthen your memory.", "ప్రతి ప్రశ్నను మళ్లీ ప్రయత్నించి మీ జ్ఞాపకశక్తిని బలపరచండి.", "हर प्रश्न को दोबारा हल करके अपनी याददाश्त मजबूत करें।")}</p>
+    </section>
+    <div class="practice-list">${cards}</div>
+  `;
+}
+
+
+function answerPractice(button, classNumber, chapterIndex, lessonIndex, questionIndex, selectedOption, correctOption) {
+
+  const card = button.closest(".practice-card");
+  const buttons = card.querySelectorAll(".quiz-option");
+
+  buttons.forEach(item => item.disabled = true);
+
+  if (selectedOption === correctOption) {
+    button.classList.add("practice-correct");
+    clearWrongAnswer(classNumber, chapterIndex, lessonIndex, questionIndex);
+    experiencePoints += 2;
+    saveAccountState();
+    card.classList.add("practice-complete");
+  }
+
+  else {
+    button.classList.add("practice-wrong");
+    buttons[correctOption].classList.add("practice-correct");
+  }
+}
 
 
 // ======================================================
@@ -49,6 +622,106 @@ function textByLanguage(
 }
 
 
+function uiText(key) {
+
+  const translations = {
+    tagline: [
+      "Learning Beyond Internet Barriers",
+      "ఇంటర్నెట్ అడ్డంకులు లేకుండా అభ్యాసం",
+      "इंटरनेट की बाधाओं से परे सीखना"
+    ],
+    checking: ["Checking...", "తనిఖీ చేస్తోంది...", "जाँच हो रही है..."],
+    online: ["Online", "ఆన్‌లైన్", "ऑनलाइन"],
+    offlineReady: ["Offline Ready", "ఆఫ్‌లైన్ సిద్ధంగా ఉంది", "ऑफलाइन तैयार"],
+    assistant: ["Gyaan Assistant", "జ్ఞాన్ సహాయకుడు", "ज्ञान सहायक"],
+    login: ["Log in", "లాగిన్", "लॉगिन"],
+    back: ["Back", "వెనుకకు", "वापस"],
+    offlineAssistant: ["Offline Learning Assistant", "ఆఫ్‌లైన్ అభ్యాస సహాయకుడు", "ऑफलाइन सीखने का सहायक"],
+    openAssistant: ["Open Gyaan Assistant", "జ్ఞాన్ సహాయకుడిని తెరవండి", "ज्ञान सहायक खोलें"],
+    close: ["Close chat", "చాట్ మూసివేయండి", "चैट बंद करें"],
+    askQuestion: ["Ask your question...", "మీ ప్రశ్న అడగండి...", "अपना प्रश्न पूछें..."],
+    home: ["Home", "హోమ్", "होम"],
+    learn: ["Learn", "నేర్చుకోండి", "सीखें"],
+    ask: ["Ask", "అడగండి", "पूछें"],
+    startLearning: ["Start Learning", "అభ్యాసం ప్రారంభించండి", "सीखना शुरू करें"],
+    askGyaan: ["Ask Gyaan", "జ్ఞాన్‌ను అడగండి", "ज्ञान से पूछें"],
+    offline: ["Offline", "ఆఫ్‌లైన్", "ऑफलाइन"],
+    multilingual: ["Multilingual", "బహుభాషా", "बहुभाषी"],
+    interactive: ["Interactive", "ఇంటరాక్టివ్", "इंटरैक्टिव"],
+    why: ["Why Gyaan Setu?", "జ్ఞాన్ సేతు ఎందుకు?", "ज्ञान सेतु क्यों?"],
+    simpleLearning: ["Learning designed to remain simple, accessible and useful.", "అభ్యాసం సరళంగా, అందుబాటులో మరియు ఉపయోగకరంగా ఉండేలా రూపొందించబడింది.", "सीखने को सरल, सुलभ और उपयोगी बनाया गया है।"],
+    offlineLearning: ["Offline Learning", "ఆఫ్‌లైన్ అభ్యాసం", "ऑफलाइन सीखना"],
+    cachedContent: ["Previously cached educational content remains available without continuous internet.", "ఇంతకు ముందు క్యాష్ చేసిన విద్యా కంటెంట్ నిరంతర ఇంటర్నెట్ లేకుండానే అందుబాటులో ఉంటుంది.", "पहले से कैश की गई शैक्षिक सामग्री लगातार इंटरनेट के बिना भी उपलब्ध रहती है।"],
+    threeLanguages: ["Three Languages", "మూడు భాషలు", "तीन भाषाएँ"],
+    languageDescription: ["Students can learn in English, Telugu or Hindi.", "విద్యార్థులు ఇంగ్లీష్, తెలుగు లేదా హిందీలో నేర్చుకోవచ్చు.", "विद्यार्थी अंग्रेज़ी, तेलुगु या हिंदी में सीख सकते हैं।"],
+    activities: ["Activities & Quizzes", "కార్యకలాపాలు మరియు క్విజ్‌లు", "गतिविधियाँ और प्रश्नोत्तरी"],
+    activityDescription: ["Interactive learning helps students review important concepts.", "ఇంటరాక్టివ్ అభ్యాసం విద్యార్థులకు ముఖ్యమైన భావనలను పునఃసమీక్షించడంలో సహాయపడుతుంది.", "इंटरैक्टिव सीखने से विद्यार्थी महत्वपूर्ण अवधारणाओं को दोहरा सकते हैं।"],
+    dashboard: ["My Learning Dashboard", "నా అభ్యాస డాష్‌బోర్డ్", "मेरा सीखने का डैशबोर्ड"],
+    trackJourney: ["Track your learning journey.", "మీ అభ్యాస ప్రయాణాన్ని ట్రాక్ చేయండి.", "अपनी सीखने की यात्रा पर नज़र रखें।"],
+    overall: ["Overall Progress", "మొత్తం పురోగతి", "कुल प्रगति"],
+    totalLessons: ["Total Lessons", "మొత్తం పాఠాలు", "कुल पाठ"],
+    completed: ["Completed", "పూర్తయింది", "पूरा हुआ"],
+    language: ["Language", "భాష", "भाषा"],
+    continueLearning: ["CONTINUE LEARNING", "అభ్యాసాన్ని కొనసాగించండి", "सीखना जारी रखें"],
+    firstLesson: ["Start your first lesson", "మీ మొదటి పాఠాన్ని ప్రారంభించండి", "अपना पहला पाठ शुरू करें"],
+    chooseLanguageClass: ["Choose a language and class to begin.", "ప్రారంభించడానికి భాష మరియు తరగతిని ఎంచుకోండి.", "शुरू करने के लिए भाषा और कक्षा चुनें।"],
+    achievements: ["Achievements", "విజయాలు", "उपलब्धियाँ"],
+    milestones: ["Your learning milestones.", "మీ అభ్యాస మైలురాళ్లు.", "आपकी सीखने की उपलब्धियाँ।"]
+  };
+
+  const languageIndex =
+    selectedLanguage === "Telugu"
+      ? 1
+      : selectedLanguage === "Hindi"
+        ? 2
+        : 0;
+
+  return translations[key]
+    ? translations[key][languageIndex]
+    : key;
+}
+
+
+function applyShellLanguage() {
+
+  const textTargets = {
+    brandTagline: "tagline",
+    assistantTitle: "assistant",
+    assistantSubtitle: "offlineAssistant",
+    homeNavLabel: "home",
+    learnNavLabel: "learn",
+    askNavLabel: "ask"
+  };
+
+
+  Object.keys(textTargets).forEach(
+    id => {
+      const element = document.getElementById(id);
+
+      if (element) {
+        element.textContent = uiText(textTargets[id]);
+      }
+    }
+  );
+
+
+  document.getElementById("chatFab")?.setAttribute(
+    "aria-label",
+    uiText("openAssistant")
+  );
+
+  document.getElementById("closeChat")?.setAttribute(
+    "aria-label",
+    uiText("close")
+  );
+
+  document.getElementById("chatInput")?.setAttribute(
+    "placeholder",
+    uiText("askQuestion")
+  );
+}
+
+
 function getClassName(number) {
 
   return textByLanguage(
@@ -59,13 +732,29 @@ function getClassName(number) {
 }
 
 
+function getLanguageDisplayName() {
+
+  return selectedLanguage === "Telugu"
+    ? "తెలుగు"
+    : selectedLanguage === "Hindi"
+      ? "हिन्दी"
+      : "English";
+}
+
+
 // ======================================================
 // HOME PAGE + DASHBOARD
 // ======================================================
 
 function showHome() {
 
+  if (!currentAccountId) {
+    showLanguageScreen();
+    return;
+  }
+
   setActiveNav(0);
+  applyShellLanguage();
 
   const overall =
     getOverallProgress();
@@ -81,19 +770,23 @@ function showHome() {
       <div class="hero-content">
 
         <span class="hero-badge">
-          📴 Offline • 🌐 Multilingual • 🎯 Interactive
+          📴 ${uiText("offline")} • 🌐 ${uiText("multilingual")} • 🎯 ${uiText("interactive")}
         </span>
 
         <h2>
-          Learning that goes
-          wherever you go.
+          ${textByLanguage(
+            "Learning that goes wherever you go.",
+            "మీరు ఎక్కడికి వెళ్లినా మీతో పాటు వచ్చే అభ్యాసం.",
+            "सीखना जो आपके साथ हर जगह जाता है।"
+          )}
         </h2>
 
         <p>
-          Explore simple lessons, visual explanations,
-          activities and quizzes in English, Telugu and Hindi.
-          Gyaan Setu is designed to continue supporting learning
-          even when internet connectivity is limited.
+          ${textByLanguage(
+            "Explore simple lessons, visual explanations, activities and quizzes in English, Telugu and Hindi. Gyaan Setu continues supporting learning even when internet connectivity is limited.",
+            "ఇంగ్లీష్, తెలుగు మరియు హిందీలో సరళమైన పాఠాలు, దృశ్య వివరణలు, కార్యకలాపాలు మరియు క్విజ్‌లను అన్వేషించండి. ఇంటర్నెట్ పరిమితంగా ఉన్నప్పటికీ జ్ఞాన్ సేతు అభ్యాసానికి తోడ్పడుతుంది.",
+            "अंग्रेज़ी, तेलुगु और हिंदी में सरल पाठ, दृश्य व्याख्याएँ, गतिविधियाँ और प्रश्नोत्तरी देखें। इंटरनेट सीमित होने पर भी ज्ञान सेतु सीखने में सहायता करता है।"
+          )}
         </p>
 
         <div class="hero-actions">
@@ -102,14 +795,14 @@ function showHome() {
             class="primary-btn"
             onclick="showLanguageScreen()"
           >
-            Start Learning →
+            ${uiText("startLearning")} →
           </button>
 
           <button
             class="secondary-btn"
             onclick="openChat()"
           >
-            💬 Ask Gyaan
+            💬 ${uiText("askGyaan")}
           </button>
 
         </div>
@@ -123,11 +816,10 @@ function showHome() {
 
       <div class="section-heading">
 
-        <h2>Why Gyaan Setu?</h2>
+        <h2>${uiText("why")}</h2>
 
         <p>
-          Learning designed to remain simple,
-          accessible and useful.
+          ${uiText("simpleLearning")}
         </p>
 
       </div>
@@ -137,26 +829,30 @@ function showHome() {
 
         ${featureCard(
           "📴",
-          "Offline Learning",
-          "Previously cached educational content remains available without continuous internet."
+          uiText("offlineLearning"),
+          uiText("cachedContent")
         )}
 
         ${featureCard(
           "🌐",
-          "Three Languages",
-          "Students can learn in English, Telugu or Hindi."
+          uiText("threeLanguages"),
+          uiText("languageDescription")
         )}
 
         ${featureCard(
           "🎯",
-          "Activities & Quizzes",
-          "Interactive learning helps students review important concepts."
+          uiText("activities"),
+          uiText("activityDescription")
         )}
 
         ${featureCard(
           "🤖",
-          "Gyaan Assistant",
-          "The learning assistant searches locally stored lesson knowledge without an online API."
+          uiText("assistant"),
+          textByLanguage(
+            "The learning assistant searches locally stored lesson knowledge without an online API.",
+            "ఈ అభ్యాస సహాయకుడు ఆన్‌లైన్ API లేకుండా స్థానికంగా నిల్వ చేసిన పాఠాల జ్ఞానాన్ని శోధిస్తాడు.",
+            "यह सहायक बिना ऑनलाइन API के स्थानीय रूप से संग्रहीत पाठ ज्ञान को खोजता है।"
+          )
         )}
 
       </div>
@@ -173,11 +869,11 @@ function showHome() {
       <div class="section-heading">
 
         <h2>
-          📊 My Learning Dashboard
+          📊 ${uiText("dashboard")}
         </h2>
 
         <p>
-          Track your learning journey.
+          ${uiText("trackJourney")}
         </p>
 
       </div>
@@ -190,7 +886,7 @@ function showHome() {
           <div>
 
             <span class="progress-label">
-              Overall Progress
+              ${uiText("overall")}
             </span>
 
             <h2>
@@ -232,7 +928,7 @@ function showHome() {
           </h2>
 
           <p>
-            Total Lessons
+            ${uiText("totalLessons")}
           </p>
 
         </div>
@@ -249,7 +945,7 @@ function showHome() {
           </h2>
 
           <p>
-            Completed
+            ${uiText("completed")}
           </p>
 
         </div>
@@ -262,11 +958,11 @@ function showHome() {
           </div>
 
           <h2 class="small-stat">
-            ${selectedLanguage}
+            ${getLanguageDisplayName()}
           </h2>
 
           <p>
-            Language
+            ${uiText("language")}
           </p>
 
         </div>
@@ -282,14 +978,14 @@ function showHome() {
         <div>
 
           <span class="continue-small">
-            CONTINUE LEARNING
+            ${uiText("continueLearning")}
           </span>
 
           <h3>
             ${
               lastDetails
                 ? lastDetails.title
-                : "Start your first lesson"
+                : uiText("firstLesson")
             }
           </h3>
 
@@ -302,7 +998,7 @@ function showHome() {
               `
               : `
                 <p class="continue-description">
-                  Choose a language and class to begin.
+                  ${uiText("chooseLanguageClass")}
                 </p>
               `
           }
@@ -319,11 +1015,11 @@ function showHome() {
       <div class="section-heading achievements-heading">
 
         <h2>
-          🏆 Achievements
+          🏆 ${uiText("achievements")}
         </h2>
 
         <p>
-          Your learning milestones.
+          ${uiText("milestones")}
         </p>
 
       </div>
@@ -383,7 +1079,6 @@ function featureCard(
 // ======================================================
 
 function showLanguageScreen() {
-
   setActiveNav(1);
 
 
@@ -393,19 +1088,26 @@ function showLanguageScreen() {
       class="back-btn"
       onclick="showHome()"
     >
-      ← Back
+      ← ${uiText("back")}
     </button>
 
 
     <section class="section-heading">
 
       <h2>
-        🌐 Choose Your Language
+        🌐 ${textByLanguage(
+          "Choose Your Language",
+          "మీ భాషను ఎంచుకోండి",
+          "अपनी भाषा चुनें"
+        )}
       </h2>
 
       <p>
-        Select the language you are most comfortable
-        learning in.
+        ${textByLanguage(
+          "Select the language you are most comfortable learning in.",
+          "మీకు సౌకర్యంగా ఉన్న భాషను ఎంచుకోండి.",
+          "अपनी सुविधा की भाषा चुनें।"
+        )}
       </p>
 
     </section>
@@ -479,13 +1181,18 @@ function selectLanguage(language) {
 
   selectedLanguage =
     language;
+  applyShellLanguage();
+  updateNetworkStatus();
 
-  localStorage.setItem(
-    "gyaanLanguage",
-    language
-  );
+  if (currentAccountId) {
+    saveAccountState();
+    showClassScreen();
+    return;
+  }
 
-  showClassScreen();
+  languageChosenBeforeAuth = true;
+  renderAccountArea();
+  showAuthScreen();
 }
 
 
@@ -517,7 +1224,7 @@ function showClassScreen() {
       class="back-btn"
       onclick="showLanguageScreen()"
     >
-      ← Back
+      ← ${uiText("back")}
     </button>
 
 
@@ -532,7 +1239,7 @@ function showClassScreen() {
       </p>
 
       <p>
-        🌐 ${selectedLanguage}
+        🌐 ${getLanguageDisplayName()}
       </p>
 
     </section>
@@ -543,31 +1250,31 @@ function showClassScreen() {
       ${classCard(
         1,
         "🌱",
-        "Discover & Learn"
+        textByLanguage("Discover & Learn", "తెలుసుకోండి మరియు నేర్చుకోండి", "जानें और सीखें")
       )}
 
       ${classCard(
         2,
         "🌍",
-        "Explore & Understand"
+        textByLanguage("Explore & Understand", "అన్వేషించండి మరియు అర్థం చేసుకోండి", "अन्वेषण करें और समझें")
       )}
 
       ${classCard(
         3,
         "🌿",
-        "Environmental Studies"
+        textByLanguage("Environmental Studies", "పర్యావరణ అధ్యయనం", "पर्यावरण अध्ययन")
       )}
 
       ${classCard(
         4,
         "🔬",
-        "Environmental Studies"
+        textByLanguage("Environmental Studies", "పర్యావరణ అధ్యయనం", "पर्यावरण अध्ययन")
       )}
 
       ${classCard(
         5,
         "🌎",
-        "Environmental Studies"
+        textByLanguage("Environmental Studies", "పర్యావరణ అధ్యయనం", "पर्यावरण अध्ययन")
       )}
 
     </div>
@@ -615,10 +1322,7 @@ function selectClass(number) {
   selectedClass =
     number;
 
-  localStorage.setItem(
-    "gyaanClass",
-    number
-  );
+  saveAccountState();
 
   showSubjectScreen();
 }
@@ -657,7 +1361,7 @@ function showSubjectScreen() {
       class="back-btn"
       onclick="showClassScreen()"
     >
-      ← Back
+      ← ${uiText("back")}
     </button>
 
 
@@ -765,6 +1469,9 @@ function markLessonComplete(
       lessonIndex
     );
 
+  const wasAlreadyComplete =
+    Boolean(completedLessons[key]);
+
 
   completedLessons[key] = {
 
@@ -775,12 +1482,70 @@ function markLessonComplete(
   };
 
 
-  localStorage.setItem(
-    "gyaanProgress",
-    JSON.stringify(
-      completedLessons
-    )
-  );
+  if (!wasAlreadyComplete) {
+    experiencePoints += 10 + score;
+  }
+
+
+  saveAccountState();
+}
+
+
+function rememberWrongAnswer(
+  chapterIndex,
+  lessonIndex,
+  questionIndex,
+  selectedOption,
+  correctOption
+) {
+
+  const exists =
+    wrongAnswers.some(
+      item =>
+        item.classNumber === selectedClass &&
+        item.chapterIndex === chapterIndex &&
+        item.lessonIndex === lessonIndex &&
+        item.questionIndex === questionIndex
+    );
+
+
+  if (exists) {
+    return;
+  }
+
+
+  wrongAnswers.push({
+    classNumber: selectedClass,
+    chapterIndex,
+    lessonIndex,
+    questionIndex,
+    selectedOption,
+    correctOption
+  });
+
+  saveAccountState();
+}
+
+
+function clearWrongAnswer(
+  classNumber,
+  chapterIndex,
+  lessonIndex,
+  questionIndex
+) {
+
+  wrongAnswers =
+    wrongAnswers.filter(
+      item =>
+        !(
+          item.classNumber === classNumber &&
+          item.chapterIndex === chapterIndex &&
+          item.lessonIndex === lessonIndex &&
+          item.questionIndex === questionIndex
+        )
+    );
+
+  saveAccountState();
 }
 
 
@@ -1073,7 +1838,7 @@ function showChapters() {
       class="back-btn"
       onclick="showSubjectScreen()"
     >
-      ← Back
+      ← ${uiText("back")}
     </button>
 
 
@@ -1144,7 +1909,7 @@ function openChapter(
         class="back-btn"
         onclick="showChapters()"
       >
-        ← Back
+        ← ${uiText("back")}
       </button>
 
 
@@ -1244,7 +2009,7 @@ function openChapter(
       class="back-btn"
       onclick="showChapters()"
     >
-      ← Back
+      ← ${uiText("back")}
     </button>
 
 
@@ -1298,12 +2063,7 @@ function saveLastLesson(
   };
 
 
-  localStorage.setItem(
-    "gyaanLastLesson",
-    JSON.stringify(
-      lastLesson
-    )
-  );
+  saveAccountState();
 }
 
 
@@ -1382,10 +2142,7 @@ function continueLearning() {
     lastLesson.classNumber;
 
 
-  localStorage.setItem(
-    "gyaanClass",
-    selectedClass
-  );
+  saveAccountState();
 
 
   openLesson(
@@ -1466,13 +2223,21 @@ function openLesson(
   }
 
 
+  const pictureActivity =
+    renderPictureActivity(
+      lesson,
+      chapterIndex,
+      lessonIndex
+    );
+
+
   app.innerHTML = `
 
     <button
       class="back-btn"
       onclick="openChapter(${chapterIndex})"
     >
-      ← Back
+      ← ${uiText("back")}
     </button>
 
 
@@ -1529,6 +2294,9 @@ function openLesson(
         </p>
 
       </div>
+
+
+      ${pictureActivity}
 
 
       <div class="lesson-actions">
@@ -1678,7 +2446,7 @@ function startQuiz(
         )
       "
     >
-      ← Back
+      ← ${uiText("back")}
     </button>
 
 
@@ -1802,6 +2570,14 @@ function answerQuiz(
       correctOption
     ].style.borderColor =
       "#36a866";
+
+    rememberWrongAnswer(
+      window.currentQuizChapter,
+      window.currentQuizLesson,
+      questionIndex,
+      selectedOption,
+      correctOption
+    );
 
   }
 
@@ -1936,11 +2712,11 @@ function getAchievements(
         <div>
 
           <strong>
-            First Step
+            ${textByLanguage("First Step", "మొదటి అడుగు", "पहला कदम")}
           </strong>
 
           <p>
-            Completed your first lesson
+            ${textByLanguage("Completed your first lesson", "మీ మొదటి పాఠం పూర్తయింది", "अपना पहला पाठ पूरा किया")}
           </p>
 
         </div>
@@ -1965,11 +2741,11 @@ function getAchievements(
         <div>
 
           <strong>
-            Learning Streak
+            ${textByLanguage("Learning Streak", "అభ్యాస పరంపర", "सीखने की निरंतरता")}
           </strong>
 
           <p>
-            Completed 5 lessons
+            ${textByLanguage("Completed 5 lessons", "5 పాఠాలు పూర్తయ్యాయి", "5 पाठ पूरे किए")}
           </p>
 
         </div>
@@ -1994,11 +2770,11 @@ function getAchievements(
         <div>
 
           <strong>
-            Learning Explorer
+            ${textByLanguage("Learning Explorer", "అభ్యాస అన్వేషకుడు", "सीखने का खोजकर्ता")}
           </strong>
 
           <p>
-            Completed 10 lessons
+            ${textByLanguage("Completed 10 lessons", "10 పాఠాలు పూర్తయ్యాయి", "10 पाठ पूरे किए")}
           </p>
 
         </div>
@@ -2023,11 +2799,11 @@ function getAchievements(
         <div>
 
           <strong>
-            Gyaan Champion
+            ${textByLanguage("Gyaan Champion", "జ్ఞాన్ ఛాంపియన్", "ज्ञान चैंपियन")}
           </strong>
 
           <p>
-            Completed 20 lessons
+            ${textByLanguage("Completed 20 lessons", "20 పాఠాలు పూర్తయ్యాయి", "20 पाठ पूरे किए")}
           </p>
 
         </div>
@@ -2050,12 +2826,15 @@ function getAchievements(
         <div>
 
           <strong>
-            Start Learning
+            ${uiText("startLearning")}
           </strong>
 
           <p>
-            Complete your first lesson
-            to unlock an achievement.
+            ${textByLanguage(
+              "Complete your first lesson to unlock an achievement.",
+              "విజయాన్ని అన్‌లాక్ చేయడానికి మీ మొదటి పాఠాన్ని పూర్తి చేయండి.",
+              "उपलब्धि पाने के लिए अपना पहला पाठ पूरा करें।"
+            )}
           </p>
 
         </div>
@@ -2765,6 +3544,11 @@ chatInput.addEventListener(
 
 function showLearn() {
 
+  if (!currentAccountId) {
+    showLanguageScreen();
+    return;
+  }
+
   setActiveNav(1);
 
   showLanguageScreen();
@@ -2867,7 +3651,7 @@ function updateNetworkStatus() {
       "#2db66d";
 
     text.textContent =
-      "Online";
+      uiText("online");
 
   }
 
@@ -2877,7 +3661,7 @@ function updateNetworkStatus() {
       "#f0a23c";
 
     text.textContent =
-      "Offline Ready";
+      uiText("offlineReady");
 
   }
 }
@@ -2942,5 +3726,85 @@ if (
 // ======================================================
 
 updateNetworkStatus();
+renderAccountArea();
 
-showHome();
+if (currentAccountId) {
+  showHome();
+}
+
+else {
+  showLanguageScreen();
+}
+
+
+function renderPictureActivity(
+  lesson,
+  chapterIndex,
+  lessonIndex
+) {
+
+  const classData = learningData[`class${selectedClass}`];
+  const allLessons = classData.chapters
+    .flatMap(chapter => chapter.lessons);
+  const distractors = allLessons
+    .filter(item => item.id !== lesson.id)
+    .slice(0, 2)
+    .map(item => item.title[selectedLanguage]);
+  const options = [lesson.title[selectedLanguage], ...distractors];
+
+
+  while (options.length < 3) {
+    options.push(
+      textByLanguage("Something else", "మరొక విషయం", "कुछ और")
+    );
+  }
+
+
+  return `
+    <div class="picture-activity">
+      <div class="picture-activity-heading">
+        <span class="picture-activity-icon">🖼️</span>
+        <div>
+          <h3>${textByLanguage("Picture Check", "చిత్రాన్ని గుర్తించండి", "चित्र पहचानें")}</h3>
+          <p>${textByLanguage("Look at the picture and choose what this lesson is about.", "చిత్రాన్ని చూసి ఈ పాఠం దేని గురించి చెప్పుతుందో ఎంచుకోండి.", "चित्र देखकर चुनें कि यह पाठ किस बारे में है।")}</p>
+        </div>
+      </div>
+      ${lesson.image
+        ? `<img class="picture-activity-image" src="${lesson.image}" alt="${lesson.title[selectedLanguage]}">`
+        : `<div class="picture-activity-visual">${lesson.visual || "📘"}</div>`}
+      <div class="picture-options">
+        ${options.map(
+          (option, optionIndex) => `
+            <button class="picture-option" onclick="checkPictureAnswer(this, ${optionIndex}, 0)">
+              ${option}
+            </button>
+          `
+        ).join("")}
+      </div>
+      <p class="picture-feedback" aria-live="polite"></p>
+    </div>
+  `;
+}
+
+
+function checkPictureAnswer(button, selectedOption, correctOption) {
+
+  const container = button.closest(".picture-activity");
+  const buttons = container.querySelectorAll(".picture-option");
+  const feedback = container.querySelector(".picture-feedback");
+
+  buttons.forEach(item => item.disabled = true);
+
+  if (selectedOption === correctOption) {
+    button.classList.add("practice-correct");
+    feedback.textContent = textByLanguage("Correct! +2 XP", "సరైనది! +2 XP", "सही! +2 XP");
+    experiencePoints += 2;
+    saveAccountState();
+  }
+
+  else {
+    button.classList.add("practice-wrong");
+    buttons[correctOption].classList.add("practice-correct");
+    feedback.textContent = textByLanguage("Good try!", "మంచి ప్రయత్నం!", "अच्छी कोशिश!");
+  }
+}
